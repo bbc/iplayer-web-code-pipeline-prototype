@@ -1,0 +1,15 @@
+export enum AWS_ACCOUNTS {
+  'iPlayer Dev'='394397619161',
+  'iPlayer Prod'='799983092012',
+  'iPlayer Tooling'='573493533641',
+  'iPlayer Pipelines'='979446310614',
+  'Tooling Dev'='845565075561',
+  'Tooling Prod'='990076731699',
+  'Shared Dev'='219028824415',
+  'iPlayer TV Prod'='198243407611',
+  'iPlayer TV Dev'='119990297419',
+  'RMS Tooling Prod'='483361262180',
+  'PHS Tooling Prod'='833360001053',
+  'PHS Dev'='753029049679',
+  'PHS Prod'='233960319838',
+}
