@@ -26,7 +26,7 @@ const stack = new cdk.Stack(app, 'WebComponentsPipelineStack', {
 
 const { pipeline } = new TVRPipeline(stack, 'Pipeline', {
   repo,
-  slackChannel: SLACK_CHANNEL.IPLAYER_WEB_BROWSE
+  slackChannel: SLACK_CHANNEL.IPLAYER_WEB_REL
 })
 
 // pipeline.addStage(new MyStage(stack, 'Test-MainStage', {
