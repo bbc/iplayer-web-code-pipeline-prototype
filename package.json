@@ -5,9 +5,10 @@
   "main": "web-components/pipeline.ts",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "pipeline": "sh scripts/pipeline.sh",
     "build": "tsc -d --outDir dist",
-    "synth": "npx cdk synth"
+    "synth": "npx cdk synth",
+    "bootstrap": "node cdk/cosmosCdk.js bootstrap",
+    "deploy": "node cdk/cosmosCdk.js deploy"
   },
   "author": "",
   "license": "ISC",
