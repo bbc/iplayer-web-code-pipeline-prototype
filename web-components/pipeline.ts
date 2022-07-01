@@ -3,7 +3,7 @@ import { Bucket } from '@aws-cdk/aws-s3'
 import { TVRPipeline } from 'tvr-pipeline-cdk'
 import { AWS_ACCOUNTS, SLACK_CHANNEL } from '../config'
 
-const repo = 'bbc/iplayer-web-components'
+const repo = 'iplayer-web-components'
 
 // The App Infrastructure
 class MyStage extends cdk.Stage {
