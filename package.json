@@ -5,12 +5,14 @@
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "pipeline": "sh scripts/pipeline.sh"
+    "pipeline": "sh scripts/pipeline.sh",
+    "synth": "npx cdk synth"
   },
   "author": "",
   "license": "ISC",
   "dependencies": {
     "aws-cdk": "^1.161.0",
-    "tvr-pipeline-cdk": "github:bbc/tvr-pipeline-cdk"
+    "tvr-pipeline-cdk": "github:bbc/tvr-pipeline-cdk",
+    "typescript": "^4.7.4"
   }
 }
