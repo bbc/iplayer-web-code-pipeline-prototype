@@ -1,5 +1,5 @@
 {
-  "app": "node web-components/pipeline.ts",
+  "app": "node dist/web-components/pipeline.js",
   "watch": {
     "include": [
       "**"
