@@ -1,0 +1,215 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Example template from Delivery Engineering
+
+# Parameters:
+#   CodeStarConnectionArn:
+#     Type: String
+#     Description: The ARN of the CodeStar connection. App Admin should have set this up and you can find it by logging into your account and visiting https://eu-west-1.console.aws.amazon.com/codesuite/settings/connections
+
+Resources:
+  ArtifactsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub 'codepipeline-build-artifacts-store-${AWS::AccountId}'
+      AccessControl: Private
+      LifecycleConfiguration:
+        Rules:
+          - ExpirationInDays: 180
+            Status: Enabled    
+  CodepipelineExecution:
+    Type: AWS::IAM::Role
+    Properties:
+      Path: /
+      RoleName: codepipeline-execution-role
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: codepipeline.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        # - PolicyName: CodestarPolicy
+        #   PolicyDocument:
+        #     Version: "2012-10-17"
+        #     Statement:
+        #       - Sid: AllowUseOfGitHubConnection
+        #         Action:
+        #           - codestar-connections:UseConnection
+        #         Resource:
+        #           - !Ref CodeStarConnectionArn
+        #         Effect: Allow
+        - PolicyName: CloudFormationPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - iam:GetRole
+                  - iam:PassRole
+                  - cloudformation:CreateStack
+                  - cloudformation:DeleteStack
+                  - cloudformation:UpdateStack
+                  - cloudformation:CreateChangeSet
+                  - cloudformation:DescribeChangeSet
+                  - cloudformation:ExecuteChangeSet
+                  - cloudformation:DeleteChangeSet
+                  - cloudformation:ValidateTemplate
+                  - cloudformation:DescribeStacks
+                  - cloudformation:SetStackPolicy
+                Resource: "*"
+        - PolicyName: CodeBuildPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Action:
+                  - s3:PutObject
+                  - s3:GetObject
+                  - s3:GetObjectVersion
+                  - s3:GetBucketVersioning
+                Resource:
+                  - "*"
+                Effect: Allow
+              - Action:
+                  - codebuild:BatchGetBuilds
+                  - codebuild:StartBuild
+                Resource: "*"
+                Effect: Allow
+              - Action:
+                  - sns:Publish
+                Resource: "*"
+                Effect: Allow
+        - PolicyName: CrossAccount
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Action:
+                  - sts:AssumeRole
+                  - kms:Encrypt
+                  - kms:Decrypt
+                  - kms:ReEncrypt*
+                  - kms:GenerateDataKey*
+                  - kms:DescribeKey
+                Resource:
+                  - "*"
+                Effect: Allow
+
+  CloudformationRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Path: /
+      RoleName: codepipeline-cloudformation-role
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: cloudformation.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AdministratorAccess
+
+  CommonCodeBuildRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action: sts:AssumeRole
+            Effect: Allow
+            Principal:
+              Service: codebuild.amazonaws.com
+
+  CommonCodeBuildBaseManagedPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      Description: Generic managed policy to be used by CodeBuild projects
+      ManagedPolicyName: CommonCodeBuildBasePolicy
+      Roles:
+        - !Ref CommonCodeBuildRole
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          # - Sid: AllowUseOfGitHubConnection
+          #   Action:
+          #     - codestar-connections:UseConnection
+          #   Resource:
+          #     - !Ref CodeStarConnectionArn
+          #   Effect: Allow
+          - Action: cloudformation:ValidateTemplate
+            Resource: "*"
+            Effect: Allow
+            Sid: CloudformationPolicy
+          - Action:
+              - logs:CreateLogGroup
+              - logs:CreateLogStream
+              - logs:PutLogEvents
+            Resource: "*"
+            Effect: Allow
+            Sid: CloudWatchLogsPolicy
+          - Action:
+              - sts:AssumeRole
+            Resource: "*"
+            Effect: Allow
+            Sid: AssumeRolePolicy
+          - Action:
+              - ssm:GetParameters
+              - secretsmanager:GetSecretValue
+            Resource: "*"
+            Effect: Allow
+            Sid: SSMPolicy
+          - Action: kms:*
+            Resource: "*"
+            Effect: Allow
+            Sid: KMSPolicy
+          - Action:
+              - s3:Get*
+              - s3:List*
+              - s3:PutObject
+              - s3:PutObjectAcl
+              - s3:DeleteObject
+            Resource:
+              - !Sub
+                - "arn:aws:s3:::${bucket_name}"
+                - bucket_name: !Ref ArtifactsBucket
+              - !Sub
+                - "arn:aws:s3:::${bucket_name}/*"
+                - bucket_name: !Ref ArtifactsBucket
+            Effect: Allow
+            Sid: S3Policy
+          - Sid: ECRPolicy
+            Action:
+              - ecr:BatchCheckLayerAvailability
+              - ecr:CompleteLayerUpload
+              - ecr:GetAuthorizationToken
+              - ecr:InitiateLayerUpload
+              - ecr:PutImage
+              - ecr:UploadLayerPart
+              - ecr:GetDownloadUrlForLayer
+              - ecr:BatchGetImage
+              - ecr:DescribeImages
+              - ecr:DescribeRepositories
+              - ecr:ListImages
+              - ecr:GetRepositoryPolicy
+            Effect: Allow
+            Resource: "*"
+          - Sid: CodeBuildTestReportsPolicy
+            Action:
+              - codebuild:CreateReportGroup
+              - codebuild:CreateReport
+              - codebuild:UpdateReport
+              - codebuild:BatchPutTestCases
+            Effect: Allow
+            Resource: "*"
+Outputs:
+  ArtifactsBucketName:
+    Export:
+      Name: ci-core-infra-artifacts-bucket-name
+    Value: !Ref ArtifactsBucket
+  CodeBuildRole:
+    Export:
+      Name: ci-core-infra-common-codebuild-role-arn
+    Value: !GetAtt CommonCodeBuildRole.Arn
+  CodePipelineRole:
+    Export:
+      Name: ci-core-infra-codepipeline-execution-role-arn
+    Value: !GetAtt CodepipelineExecution.Arn
