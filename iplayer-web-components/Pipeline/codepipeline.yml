@@ -26,7 +26,7 @@ Resources:
       Name: !Ref PipelineName
       RestartExecutionOnUpdate: true
       RoleArn: !ImportValue ci-core-infra-codepipeline-execution-role-arn
-      # ArtifactStore is an S3 bucket where that codepipeline stores files
+      # ArtifactStore is an S3 bucket where codepipeline stores files
       ArtifactStore:
         Location: ipwb-pipeline-artifacts
         Type: S3
