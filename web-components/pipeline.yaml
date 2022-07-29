@@ -1,13 +1,48 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: |
+  An example from delivery engineering of a basic source, build, deploy codepipeline using a codestar connection
+  Assume the repo that is being built has a single cloud formation stack in it called main.yml, which contains a AWS SAM Serverless Lambda
+Parameters:
+  GitHubRepo:
+    Type: String
+    Description: The name of the GitHub repo with your AWS cloudformation stacks
+  GitHubBranch:
+    Type: String
+    Description: The git branch you wish to deploy. Used in both the Source Stage and the Webhook.
+    Default: main
+  CodeBuildImage:
+    Type: String
+    Description: The Docker Image to use for CodeBuild Project(s)
+    Default: aws/codebuild/standard:5.0
+  CodeStarConnectionArn:
+    Type: String
+    Description: The ARN of the CodeStar connection. App Admin should have set this up and you can find it by logging into your account and visiting https://eu-west-1.console.aws.amazon.com/codesuite/settings/connections
+  CodePipelineName:
+    Type: String
+    Description: The name of the pipeline
+  DevAWSAccountID:
+    Type: String
+    Description: ID of the AWS Dev Account
+  ProdAWSAccountID:
+    Type: String
+    Description: ID of the AWS Prod Account
+
 Resources:
-  BuildCodeBuildProject:
+  CodeBuildProject:
     Type: AWS::CodeBuild::Project
     Properties:
       Artifacts:
         Type: CODEPIPELINE
+      TimeoutInMinutes: 5
+      Description: CodeBuild project to build
       Environment:
         ComputeType: BUILD_GENERAL1_SMALL
         Image: !Ref CodeBuildImage
         Type: LINUX_CONTAINER
+        EnvironmentVariables:
+          - Name: ARTIFACTS_BUCKET
+            Type: PLAINTEXT
+            Value: !ImportValue ci-core-infra-artifacts-bucket-name
       ServiceRole: !ImportValue ci-core-infra-common-codebuild-role-arn
       EncryptionKey: "alias/codepipeline-kms-key"
       Source:
@@ -17,48 +52,10 @@ Resources:
           phases:
             build:
               commands:
-                - echo 'Building...'
-
-  TestCodeBuildProject:
-    Type: AWS::CodeBuild::Project
-    Properties:
-      Artifacts:
-        Type: CODEPIPELINE
-      Environment:
-        ComputeType: BUILD_GENERAL1_SMALL
-        Image: !Ref CodeBuildImage
-        Type: LINUX_CONTAINER
-      ServiceRole: !ImportValue ci-core-infra-common-codebuild-role-arn
-      EncryptionKey: "alias/codepipeline-kms-key"
-      Source:
-        Type: CODEPIPELINE
-        BuildSpec: |
-          version: 0.2
-          phases:
-            build:
-              commands:
-                - echo 'Testing...'                
-
-  DeployingCodeBuildProject:
-    Type: AWS::CodeBuild::Project
-    Properties:
-      Artifacts:
-        Type: CODEPIPELINE
-      Environment:
-        ComputeType: BUILD_GENERAL1_SMALL
-        Image: !Ref CodeBuildImage
-        Type: LINUX_CONTAINER
-      ServiceRole: !ImportValue ci-core-infra-common-codebuild-role-arn
-      EncryptionKey: "alias/codepipeline-kms-key"
-      Source:
-        Type: CODEPIPELINE
-        BuildSpec: |
-          version: 0.2
-          phases:
-            build:
-              commands:
-                - echo 'Deploying...'
-
+                - aws cloudformation package --template-file main.yml --s3-bucket $ARTIFACTS_BUCKET --s3-prefix artifacts/some-lambda --output-template-file main.packaged.yml
+          artifacts:
+            files:
+              - main.packaged.yml
   CodePipeline:
     Type: AWS::CodePipeline::Pipeline
     Properties:
@@ -100,28 +97,38 @@ Resources:
                 - Name: BuiltSource
               Name: Build
               Configuration:
-                ProjectName: !Ref BuildCodeBuildProject
-        - Name: Test
+                ProjectName: !Ref CodeBuildProject
+        - Name: Deploy-to-dev
           Actions:
             - ActionTypeId:
-                Category: Test
+                Category: Deploy
                 Owner: AWS
                 Version: "1"
-                Provider: CodeBuild
+                Provider: CloudFormation
               InputArtifacts:
                 - Name: BuiltSource
-              Name: Test
+              Name: Deploy-Lambda
               Configuration:
-                ProjectName: !Ref TestCodeBuildProject
-        - Name: Deploy
+                ActionMode: CREATE_UPDATE
+                Capabilities: CAPABILITY_NAMED_IAM,CAPABILITY_AUTO_EXPAND
+                StackName: "some-lambda"
+                RoleArn: !Sub "arn:aws:iam::${DevAWSAccountID}:role/codepipeline-cloudformation-role"
+                TemplatePath: BuiltSource::main.packaged.yml
+              RoleArn: !Sub "arn:aws:iam::${DevAWSAccountID}:role/codepipeline-role"
+        - Name: Deploy-to-prod
           Actions:
             - ActionTypeId:
-                Category: Build # note there is no deploy only build or test.
+                Category: Deploy
                 Owner: AWS
                 Version: "1"
-                Provider: CodeBuild
+                Provider: CloudFormation
               InputArtifacts:
                 - Name: BuiltSource
-              Name: Deploy
+              Name: Deploy-Lambda
               Configuration:
-                ProjectName: !Ref DeployingCodeBuildProject
+                ActionMode: CREATE_UPDATE
+                Capabilities: CAPABILITY_NAMED_IAM,CAPABILITY_AUTO_EXPAND
+                StackName: "some-lambda"
+                RoleArn: !Sub "arn:aws:iam::${ProdAWSAccountID}:role/codepipeline-cloudformation-role"
+                TemplatePath: BuiltSource::main.packaged.yml
+              RoleArn: !Sub "arn:aws:iam::${ProdAWSAccountID}:role/codepipeline-role"
