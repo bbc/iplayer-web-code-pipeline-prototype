@@ -26,14 +26,17 @@ Resources:
       Name: !Ref PipelineName
       RestartExecutionOnUpdate: true
       RoleArn: !ImportValue ci-core-infra-codepipeline-execution-role-arn
+      # ArtifactStore is an S3 bucket where that codepipeline stores files
       ArtifactStore:
         Location: ipwb-pipeline-artifacts
         Type: S3
         EncryptionKey:
           Id: !Ref ArtifactEncryptionKey
           Type: 'KMS'
+      # Stages are the same as stages in Jenkins
       Stages:
         - Name: Source
+          # Actions are the same as Jenkins steps
           Actions:
             - Name: CloneFromGithub
               RunOrder: 1
