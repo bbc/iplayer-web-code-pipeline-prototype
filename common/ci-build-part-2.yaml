@@ -1,0 +1,94 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Example template from Delivery Engineering
+
+Parameters:
+  DevAWSAccountID:
+    Type: String
+    Description: ID of the AWS Dev Account
+  ProdAWSAccountID:
+    Type: String
+    Description: ID of the AWS Prod Account
+
+Resources:
+  ArtifactsBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !ImportValue ci-core-infra-artifacts-bucket-name
+      PolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS:
+                - !Sub "arn:aws:iam::${DevAWSAccountID}:role/codepipeline-role"
+                - !Sub "arn:aws:iam::${DevAWSAccountID}:role/codepipeline-cloudformation-role"
+                - !Sub "arn:aws:iam::${ProdAWSAccountID}:role/codepipeline-role"
+                - !Sub "arn:aws:iam::${ProdAWSAccountID}:role/codepipeline-cloudformation-role"
+            Action:
+              - "s3:Get*"
+            Resource:
+              - !Sub
+                - "arn:aws:s3:::${bucket_name}"
+                - bucket_name: !ImportValue ci-core-infra-artifacts-bucket-name
+              - !Sub
+                - "arn:aws:s3:::${bucket_name}/*"
+                - bucket_name: !ImportValue ci-core-infra-artifacts-bucket-name
+          - Effect: Allow
+            Principal:
+              AWS:
+                - !Sub "arn:aws:iam::${AWS::AccountId}:role/codepipeline-execution-role"
+            Action:
+              - "s3:*"
+            Resource:
+              - !Sub
+                - "arn:aws:s3:::${bucket_name}"
+                - bucket_name: !ImportValue ci-core-infra-artifacts-bucket-name
+              - !Sub
+                - "arn:aws:s3:::${bucket_name}/*"
+                - bucket_name: !ImportValue ci-core-infra-artifacts-bucket-name
+  ArtifactStoreKMSKey:
+    Type: AWS::KMS::Key
+    Properties:
+      Description: "KMS Key for Codepipeline Build Artifacts. Required for Cross Account Deployments."
+      KeyPolicy:
+        Version: "2012-10-17"
+        Id: "AdministratorKeyPolicy"
+        Statement:
+          - Sid: "Allow administration of the key"
+            Effect: "Allow"
+            Principal:
+              AWS: !Sub "${AWS::AccountId}"
+            Action:
+              - "kms:*"
+            Resource: "*"
+          - Sid: "Allow dev/prod accounts to decrypt Codepipeline resources from S3"
+            Effect: "Allow"
+            Principal:
+              AWS:
+                - !Sub "arn:aws:iam::${DevAWSAccountID}:role/codepipeline-role"
+                - !Sub "arn:aws:iam::${DevAWSAccountID}:role/codepipeline-cloudformation-role"
+                - !Sub "arn:aws:iam::${ProdAWSAccountID}:role/codepipeline-role"
+                - !Sub "arn:aws:iam::${ProdAWSAccountID}:role/codepipeline-cloudformation-role"
+                - !Sub "arn:aws:iam::${AWS::AccountId}:role/codepipeline-execution-role"
+            Action:
+              - "kms:Encrypt"
+              - "kms:Decrypt"
+              - "kms:ReEncrypt*"
+              - "kms:GenerateDataKey*"
+              - "kms:DescribeKey"
+            Resource: "*"
+  ArtifactStoreKMSKeyArn:
+    Type: AWS::KMS::Alias
+    Properties:
+      AliasName: alias/codepipeline-kms-key
+      TargetKeyId:
+        Ref: ArtifactStoreKMSKey
+
+Outputs:
+  ArtifactKMSKeyArn:
+    Export:
+      Name: ci-core-infra-artifacts-kms-key-arn
+    Value: !GetAtt ArtifactStoreKMSKey.Arn
+  ArtifactKMSKeyAliasArn:
+    Export:
+      Name: ci-core-infra-artifacts-kms-key-alias-arn
+    Value: !Sub "arn:aws:kms:${AWS::Region}:${AWS::AccountId}:${ArtifactStoreKMSKeyArn}"
