@@ -1,3 +1,0 @@
-export enum SLACK_CHANNEL {
-  IPLAYER_WEB_REL = 'C7V6N921F'
-}
