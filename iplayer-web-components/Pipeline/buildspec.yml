@@ -1,0 +1,25 @@
+version: 0.2
+env: 
+  exported-veriables:
+    - RELEASE_VERSION
+
+phases:
+  pre_install:
+    commands:
+      - echo "Fetching certificate from Certee"
+      - certee-fetch
+
+  install:
+    commands:
+      - node -v
+      - npm ci
+
+  pre_build:
+
+  build:
+
+  post_build:
+
+artifacts:
+  files:
+    - ./**/*

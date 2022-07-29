@@ -1,0 +1,52 @@
+Description: |
+  Template for Web Components CICD pipeline
+
+Parameters:
+  PipelineName:
+    Type: String
+    Description: Identifier for pipeline
+  ArtifactEncryptionKey:
+    Type: String
+    Description: Encryption Key used for storing build artifacts
+  CodeStarConnectionArn:
+    Type: String
+    Description: Connection Arn to allow cloning from Github
+  GithubRepo:
+    Type: String
+    Description: Github Repo including Owner
+  MainBranch:
+    Type: String
+    Default: 'main'
+    Description: Main Branch that is used for all deployments
+
+Resources:
+  CodePipeline:
+    Type: AWS::CodePipeline::Pipeline
+    Properties:
+      Name: !Ref PipelineName
+      RestartExecutionOnUpdate: true
+      RoleArn: !ImportValue ci-core-infra-codepipeline-execution-role-arn
+      ArtifactStore:
+        Location: ipwb-pipeline-artifacts
+        Type: S3
+        EncryptionKey:
+          Id: !Ref ArtifactEncryptionKey
+          Type: 'KMS'
+      Stages:
+        - Name: Source
+          Actions:
+            - Name: CloneFromGithub
+              RunOrder: 1
+              ActionTypeId:
+                Category: Source
+                Owner: AWS
+                Version: "1"
+                Provider: CodeStarSourceConnection
+              Configuration:
+                ConnectionArn: !Ref CodeStarConnectionArn
+                FullRepositoryId: !Ref GithubRepo
+                BranchName: !Ref MainBranch
+              OutputArtifacts:
+                - Name: GithubSource
+
+      

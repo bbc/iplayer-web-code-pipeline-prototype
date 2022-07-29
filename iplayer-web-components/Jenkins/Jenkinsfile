@@ -1,0 +1,65 @@
+pipeline {
+  agent any
+  environment {
+    COMPONENTS_VERSION = sh(script: "echo \$(cat package.json | jq -r .version)", , returnStdout: true).trim()
+  }
+  stages {
+    stage("Test") {
+      steps {
+        labelledShell label: "Install npm dependencies",
+          script: "npm ci"
+        labelledShell label: "Run tests",
+          script: "npm test"
+        labelledShell label: "Check ability to build package",
+          script: "npm run dist"
+      }
+    }
+    stage("Deploy") {
+      parallel {
+        stage("Deploy assets") {
+          agent any
+          steps {
+            labelledShell label: "Install npm dependencies",
+              script: "npm ci"
+            labelledShell label: "Build assets",
+              script: "npm run dist"
+            labelledShell label: "Remove files before S3 upload",
+              script: """
+                rm ${WORKSPACE}/dist/package.json
+                rm -r ${WORKSPACE}/dist/es ${WORKSPACE}/dist/common ${WORKSPACE}/dist/types 
+              """
+            labelledShell label: "Upload to S3",
+              script: """
+                assets-uploader \
+                  --project-name=iplayer-web-components \
+                  --project-version=${COMPONENTS_VERSION} \
+                  --assets=${WORKSPACE}/dist \
+                  --bucket=live-tviplayer-web-assets-reso-staticassetsbucket-d0zcuy3ozzj3 \
+                  --role-arn="arn:aws:iam::799983092012:role/static_assets/live-tviplayer-web-assets-resources-PublisherRole-YCO7P9PAVX3T"
+              """
+          }
+        }
+        stage("Deploy Storybook") {
+          agent any
+          steps {
+            labelledShell label: "Install npm dependencies",
+              script: "npm ci"
+            labelledShell label: "Build Storybook",
+              script: "npm run build:storybook"
+            labelledShell label: "Upload to S3",
+              script: """
+                assets-uploader \
+                  --project-name=storybook \
+                  --project-version=latest \
+                  --assets=${WORKSPACE}/.storybook/dist \
+                  --bucket=storybook.iplayer.files.bbci.co.uk \
+                  --role-arn="arn:aws:iam::573493533641:role/storybook/test-iplayer-web-components-storyboo-PublisherRole-1V9DNBAKXW79R" \
+                  --cache-control="public, max-age=300" \
+                  --force=true
+              """
+          }
+        }
+      }
+    }
+  }
+}

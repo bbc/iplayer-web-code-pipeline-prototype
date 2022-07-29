@@ -1,0 +1,40 @@
+pipeline {
+  agent any
+  stages {
+    stage("Test") {
+      steps {
+        labelledShell label: "Install npm dependencies",
+          script: "npm ci"
+        labelledShell label: "Run tests",
+          script: "npm test"
+      }
+    }
+    stage("Analysis") {
+      steps {
+        labelledShell label: "Install danger-js config",
+          script: "npm i --save-dev @bbc/iplayer-web-danger-js"
+        withCredentials([string(credentialsId: 'danger-js-github-api-token', variable: 'DANGER_GITHUB_API_TOKEN')]) {
+          labelledShell label: "Run analysis",
+            script: "npx danger ci --dangerfile node_modules/@bbc/iplayer-web-danger-js/dangerfile-components.js"
+        }
+      }
+    }
+    stage("Deploy Storybook") {
+      steps {
+        labelledShell label: "Build Storybook",
+          script: "npm run build:storybook"
+        labelledShell label: "Upload to S3",
+          script: """
+            assets-uploader \
+              --project-name=storybook \
+              --project-version=pull-requests/${CHANGE_BRANCH} \
+              --assets=${WORKSPACE}/.storybook/dist \
+              --bucket=storybook.iplayer.files.bbci.co.uk \
+              --role-arn="arn:aws:iam::573493533641:role/storybook/test-iplayer-web-components-storyboo-PublisherRole-1V9DNBAKXW79R" \
+              --cache-control="public, max-age=300" \
+              --force=true
+          """
+      }
+    }
+  }
+}

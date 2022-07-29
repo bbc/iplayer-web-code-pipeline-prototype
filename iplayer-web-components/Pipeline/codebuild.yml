@@ -1,0 +1,7 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: |
+  Build Template
+Resources:
+  CodeBuildProject:
+    Type: AWS::CodeBuild::Project
+  
