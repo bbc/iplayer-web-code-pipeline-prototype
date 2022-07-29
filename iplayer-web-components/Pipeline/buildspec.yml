@@ -1,7 +1,5 @@
 version: 0.2
 env: 
-  exported-veriables:
-    - RELEASE_VERSION
 
 phases:
   pre_install:
@@ -14,11 +12,10 @@ phases:
       - node -v
       - npm ci
 
-  pre_build:
-
   build:
-
-  post_build:
+    commands:
+      - echo "Building repo"
+      - npm run build
 
 artifacts:
   files:

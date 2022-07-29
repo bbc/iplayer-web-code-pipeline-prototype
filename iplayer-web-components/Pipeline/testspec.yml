@@ -1,0 +1,16 @@
+version: 0.2
+env: 
+
+phases:
+  pre_test:
+    commands:
+      - echo "Pre Test command"
+
+  test:
+    commands:
+      - node -v
+      - npm run test
+
+  post_test:
+    commands:
+      - echo "Post Test Command"
