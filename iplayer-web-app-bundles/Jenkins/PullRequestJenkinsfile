@@ -1,0 +1,66 @@
+pipeline {
+  agent any
+  stages {
+    stage("Test") {
+      steps {
+        labelledShell label: "Install npm dependencies",
+          script: "npm ci"
+        labelledShell label: "Check for dependency vulnerabilities",
+          script: "npx @bbc/iplayer-web-npm-audit"
+        labelledShell label: "Linting",
+          script: "npm run lint"
+        labelledShell label: "Integration and unit tests",
+          script: "npm test"
+        labelledShell label: "Test building stylesheets and JS bundles",
+          script: "npm run build"
+      }
+    }
+    stage("Webpack Bundle Stats") {
+      options { skipDefaultCheckout() }
+      steps {
+        git branch: 'main', changelog: false, poll: false, url: 'git@github.com:bbc/iplayer-web-app-bundles.git'
+        labelledShell label: "Generate baseline webpack bundle stats",
+          script: """
+            npm ci
+            NODE_ENV=production npm run build:browser
+            npx bundle-stats@3.3.10 --baseline stats/browser.json --html false
+          """
+        git branch: "${CHANGE_BRANCH}", changelog: false, poll: false, url: 'git@github.com:bbc/iplayer-web-app-bundles.git'
+        labelledShell label: "Generate current webpack bundle stats",
+          script: """
+            npm ci
+            NODE_ENV=production npm run build:browser
+            npx bundle-stats@3.3.10 stats/browser.json --out-dir ./
+          """
+        labelledShell label: "Move stats to folder",
+          script: """
+            mkdir bundle-stats
+            mv bundle-stats.html bundle-stats/index.html
+            mv stats/browser.html bundle-stats/analysis.html
+          """
+        labelledShell label: "Upload to S3",
+          script: """
+            assets-uploader \
+              --project-name=iplayer-web-app-bundles \
+              --project-version=${CHANGE_BRANCH} \
+              --assets=${WORKSPACE}/bundle-stats \
+              --bucket=iplayer-web-bundle-stats \
+              --role-arn="arn:aws:iam::573493533641:role/test-iplayer-web-bundle-stats-bucket-PublisherRole-1OASS3TKQJPSG" \
+              --cache-control="public, max-age=300" \
+              --force=true
+          """
+        withCredentials([string(credentialsId: 'danger-js-github-api-token', variable: 'DANGER_GITHUB_API_TOKEN')]) {
+          labelledShell label: "Add comment to pull request",
+            script: """
+            # Below code for removing npm cache, node_modules, package and package-lock is a temporary fix for the issue logged @ IPLAYER-40505
+              npm cache clean --force
+              rm -rf node_modules
+              rm package.json package-lock.json
+              npm i --save-dev @bbc/iplayer-web-danger-js
+              npx danger ci --dangerfile node_modules/@bbc/iplayer-web-danger-js/dangerfile-apps.js
+            """
+          }
+      }
+    }
+  }
+}

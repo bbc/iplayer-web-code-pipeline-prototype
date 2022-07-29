@@ -1,0 +1,16 @@
+version: 0.2
+env: 
+
+phases:
+  pre_pack:
+    commands:
+      - echo "Pre pack command"
+
+  pack:
+    commands:
+      - node -v
+      - npm run dist
+
+  post_pack:
+    commands:
+      - echo "Post pack Command"

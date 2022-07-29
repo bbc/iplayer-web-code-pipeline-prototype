@@ -1,0 +1,198 @@
+pipeline {
+  agent any
+  environment {
+    APP_NAME = "iplayer-web-app-bundles"
+    APP_VERSION = sh(script: "echo \$(cat package.json | jq -r .version)-${BUILD_NUMBER}", , returnStdout: true).trim()
+  }
+  stages {
+    stage("Test") {
+      steps {
+        labelledShell label: "Install npm dependencies",
+          script: "npm ci"
+        labelledShell label: "Check for dependency vulnerabilities",
+          script: "npx @bbc/iplayer-web-npm-audit"
+        labelledShell label: "Linting",
+          script: "npm run lint"
+        labelledShell label: "Integration and unit tests",
+          script: "npm test"
+      }
+    }
+    stage("Build") {
+      steps {
+        labelledShell label: "Build server & client side assets",
+          script: "NODE_ENV=production npm run build"
+        labelledShell label: "Remove unused files",
+          script: "rm -rf docs test"
+        labelledShell label: "Generate spec file",
+          script: "npm run spec"
+        labelledShell label: "Prune unused npm packages",
+          script: "npm prune --omit=dev"
+        labelledShell label: "Build RPM package",
+          script: "mock-build --os 7 --repos-dir /etc/mock/repos.d"
+        labelledShell label: "Upload client side assets to S3",
+          script: """
+            assets-uploader \
+            --project-name=${APP_NAME} \
+            --project-version=${APP_VERSION} \
+            --assets=${WORKSPACE}/public \
+            --bucket=live-tviplayer-web-assets-reso-staticassetsbucket-d0zcuy3ozzj3 \
+            --role-arn="arn:aws:iam::799983092012:role/static_assets/live-tviplayer-web-assets-resources-PublisherRole-YCO7P9PAVX3T"
+          """
+        labelledShell label: "Push RPM & register with Cosmos",
+          script: "cosmos-release service --os centos7 --release-version ${APP_VERSION} ${APP_NAME} RPMS/*.rpm"
+      }
+    }
+    stage("Deploy to Test") {
+      steps {
+        labelledShell label: "Deploy to test environment",
+          script: """
+            cosmos deploy ${APP_NAME} test -f
+            cosmos deploy-progress ${APP_NAME} test
+          """
+      }
+    }
+    stage("Acceptance Tests") {
+      parallel {
+        stage("E2Es") {
+          agent any
+          environment {
+            WEBDRIVER_BASE_URL = "https://www.test.bbc.co.uk"
+            WEBDRIVER_MAXINSTANCES = 8
+            WEBDRIVER_BROWSER_VERSION = "97.0.4692.71"
+          }
+          steps {
+            labelledShell label: "Install npm dependencies",
+                script: "npm ci"
+            withCredentials([usernamePassword(credentialsId: "browserstack", passwordVariable: "WEBDRIVER_BROWSERSTACK_KEY", usernameVariable: "WEBDRIVER_BROWSERSTACK_USERNAME")]) {
+                labelledShell label: "Run E2E tests",
+                  script: "npm run test:e2e:ci"
+            }
+          }
+          post {
+            success {
+              build job: "noo-noo-bot-alert", parameters: [
+                string(name: "ALERT_APP", value: "Bundles Web App on ${WEBDRIVER_BASE_URL}"),
+                string(name: "ALERT_TYPE", value: "E2E tests"),
+                string(name: "ALERT", value: "passing"),
+                string(name: "LINK", value: "${RUN_DISPLAY_URL}"),
+                string(name: "CHANNEL", value: "team-iplayer-web-browse"),
+                string(name: "ENV_URL", value: "${WEBDRIVER_BASE_URL}"),
+                string(name: "ONLY_ALERT_WHEN_STATE_CHANGES", value: "true")
+              ]
+            }
+            failure {
+              build job: "noo-noo-bot-alert", parameters: [
+                string(name: "ALERT_APP", value: "Bundles Web App on ${WEBDRIVER_BASE_URL}"),
+                string(name: "ALERT_TYPE", value: "E2E tests"),
+                string(name: "ALERT", value: "failing <!subteam^S821M2UBC>, <@WSV29V9BN>"),
+                string(name: "LINK", value: "${RUN_DISPLAY_URL}"),
+                string(name: "CHANNEL", value: "team-iplayer-web-browse"),
+                string(name: "ENV_URL", value: "${WEBDRIVER_BASE_URL}"),
+              ]
+            }
+          }
+        }
+        /*
+        This has been disabled temporarily because it is unstable and will be
+        enabled when a fix has been found: https://jira.dev.bbc.co.uk/browse/IPLAYER-40782
+
+        stage("Accessibility - Lighthouse") {
+          agent any
+          options { skipDefaultCheckout() }
+          environment {
+            A11Y_CONFIG = "iplayer-web/app-bundles-test"
+            A11Y_IPLAYER_WEB_BASE_URL = "https://www.test.bbc.co.uk"
+            A11Y_USERNAME = "iplayerweb.test+e2e--has-watching-history@gmail.com"
+            A11Y_PASSWORD = "iplayer1234"
+
+          }
+          steps {
+            git changelog: false, poll: false, url: "git@github.com:bbc/a11y-tests-web.git"
+            labelledShell label: "Install npm dependencies",
+              script: "npm i --production"
+            labelledShell label: "Lighthouse accessibility tests",
+              script: "npm run start:lighthouse:junit-headless"
+          }
+          post {
+            always {
+              junit "lighthouse-report.xml"
+            }
+          }
+        }
+        */
+        stage("Accessibility - BBC A11y") {
+          agent any
+          options { skipDefaultCheckout() }
+          environment {
+            A11Y_CONFIG = "iplayer-web/app-bundles-test"
+            A11Y_IPLAYER_WEB_BASE_URL = "https://www.test.bbc.co.uk"
+            A11Y_USERNAME = "iplayerweb.test+e2e--has-watching-history@gmail.com"
+            A11Y_PASSWORD = "iplayer1234"
+          }
+          steps {
+            git changelog: false, poll: false, url: "git@github.com:bbc/a11y-tests-web.git"
+            labelledShell label: "Install npm dependencies",
+              script: "npm i --production"
+            labelledShell label: "BBC A11y tests",
+              script: "npm run start:bbc-a11y:ci"
+          }
+          post {
+            always {
+              junit "bbc-a11y-report.xml"
+            }
+          }
+        }
+        stage("Accessibility - BBC A11y - U13") {
+          agent any
+          options { skipDefaultCheckout() }
+          environment {
+            A11Y_CONFIG = "iplayer-web/app-bundles-test-signed-in"
+            A11Y_IPLAYER_WEB_BASE_URL = "https://www.test.bbc.co.uk"
+            A11Y_USERNAME = "iplayerweb-test+u13"
+            A11Y_PASSWORD = "iplayer1234"
+          }
+          steps {
+            git changelog: false, poll: false, url: "git@github.com:bbc/a11y-tests-web.git"
+            labelledShell label: "Install npm dependencies",
+              script: "npm i --production"
+            labelledShell label: "BBC A11y tests",
+              script: "npm run start:bbc-a11y:ci"
+          }
+          post {
+            always {
+              junit "bbc-a11y-report.xml"
+            }
+          }
+        }
+      }
+    }
+    /*
+    This has been disabled temporarily because it is unstable and will be
+    enabled when a fix has been found: https://jira.dev.bbc.co.uk/browse/IPLAYER-40782
+
+    stage("Accessibility - Lighthouse - U13") {
+      agent any
+      options { skipDefaultCheckout() }
+      environment {
+        A11Y_CONFIG = "iplayer-web/app-bundles-test-signed-in"
+        A11Y_IPLAYER_WEB_BASE_URL = "https://www.test.bbc.co.uk"
+        A11Y_USERNAME = "iplayerweb-test+u13"
+        A11Y_PASSWORD = "iplayer1234"
+
+      }
+      steps {
+        git changelog: false, poll: false, url: "git@github.com:bbc/a11y-tests-web.git"
+        labelledShell label: "Install npm dependencies",
+          script: "npm i --production"
+        labelledShell label: "Lighthouse accessibility tests",
+          script: "npm run start:lighthouse:junit-headless"
+      }
+      post {
+        always {
+          junit "lighthouse-report.xml"
+        }
+      }
+    }
+    */
+  }
+}
